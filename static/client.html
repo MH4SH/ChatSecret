@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Store - Socket.io</title>
+</head>
+<body>
+  <style>
+    body {
+      margin: 0 auto;
+      max-width: 800px;
+      padding: 0 20px;
+    }
+
+    .chat {
+      overflow:auto;
+      height: 400px;
+    }
+
+    .container {
+      border: 2px solid #dedede;
+      background-color: #f1f1f1;
+      border-radius: 5px;
+      padding: 10px;
+      margin: 10px 0;
+    }
+
+    .container p {
+      margin: 0px;
+    }
+
+    .darker {
+      border-color: #ccc;
+      background-color: #ddd;
+    }
+
+    .container::after {
+      content: "";
+      clear: both;
+      display: table;
+    }
+
+    .time-right {
+      float: right;
+      color: #aaa;
+    }
+
+    .time-left {
+      float: left;
+      color: #999;
+    }
+
+    .form input {
+      width: 80%;
+      height: 40px;
+    }
+
+    .form button {
+      width: 16%;
+      height: 46px;
+    }
+  </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.1/socket.io.min.js"></script>
+    <div id="login">
+      <h2>Login</h2>
+      <div id="input" class="form">
+        <input type="text" name="name" id="name" placeholder="Nome de Usuário">
+        <button onclick="client.login()">Login</button>
+      </div>
+    </div>
+
+    <div id="logged" style="display: none;">
+      <h2 id="title">Mensagens</h2>
+      <div id="input" class="form">
+        <input type="text" name="message" id="message">
+        <button onclick="client.sendMessage()">Enviar</button>
+      </div>
+      <div id="root" class="chat">
+      </div>
+    </div>
+
+    <script>
+      let socket = '';
+      const client = {
+        login(){
+          const userLogged = localStorage.getItem('userName');
+
+          const userName = userLogged ? userLogged : document.querySelector('#name').value;
+
+          localStorage.setItem('userName', userName)
+
+          document.querySelector('#title').innerHTML = `Mensagens (${userName})`;
+
+          document.querySelector('#login').style.display = "none";
+          document.querySelector('#logged').style.display = "";
+          document.querySelector("#message").addEventListener("keydown", ({key}) => {
+              if (key === "Enter") client.sendMessage()
+          })
+
+
+          socket = io("http://localhost:3000", {
+            path: '/communication',
+            query: {
+              storeId: 'store-1',
+              userName
+            }
+          });
+
+
+          socket.on("message:receive", function(data) {
+            const userLogged = localStorage.getItem('userName');
+
+            const { message, userName } = data;
+
+            let messageElement = document.createElement("div");
+            messageElement.classList.add("container");
+
+            if(userLogged===userName){
+              messageElement.classList.add("darker");
+            }
+
+            messageElement.innerHTML = `<b>${userName}</b> <p>${message}</p>`;
+
+            document.querySelector("#root").insertAdjacentElement('afterbegin', messageElement);
+          });
+        },
+        sendMessage(){
+          const message = document.querySelector("#message").value;
+          if(message){
+            socket.emit("message:new", message);
+            document.querySelector("#message").value = "";
+          }
+        }
+      }
+
+      const userLogged = localStorage.getItem('userName');
+      if(userLogged) client.login();
+
+    </script>
+
+</body>
+</html>
