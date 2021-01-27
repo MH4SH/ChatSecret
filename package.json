@@ -1,6 +1,6 @@
 {
-    "name": "socketio_model_typescript",
-    "version": "1.0.1",
+    "name": "chat_secret_server",
+    "version": "0.0.1",
     "main": "index.js",
     "author": "Marcon Willian Oliveira Neves <oi@marconwillian.dev>",
     "license": "MIT",
