@@ -1,14 +1,12 @@
 declare global {
-    namespace NodeJS {
-        interface ProcessEnv {
-            NODE_ENV: 'dev' | 'test' | 'production';
+  namespace NodeJS {
+    interface ProcessEnv {
+      NODE_ENV: 'dev' | 'test' | 'production';
 
-            REDIS_URL: string;
-            REDIS_HOST: string;
-            REDIS_PORT: number;
-            REDIS_PASSWORD: string;
-        }
+      PGP_SERVER_TOKEN: string;
+      PGP_APP_TOKEN: string;
     }
+  }
 }
 
 // If this file has no import/export statements (i.e. is a script)
