@@ -4,17 +4,20 @@ import cors from 'cors';
 import { Server } from 'http';
 import 'dotenv/config';
 import path from 'path';
-import Redis from './lib/Redis';
+
 import socker from './socket';
+import routes from './routes';
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 const http = new Server(app);
 
 const portOfApplication = 3000;
 
 socker(http);
+routes(app);
 
 app.get('/', (req: any, res: any) => {
   res.sendFile(path.resolve('./static/client.html'));
