@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Store - Socket.io</title>
+
+  <!-- CSS only -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+
+  <title>Chat Secret - MH4SH</title>
 </head>
 <body>
   <style>
@@ -62,8 +66,40 @@
     }
   </style>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.1/socket.io.min.js"></script>
-    <div id="login">
+    <div class="container" id="register" style="display: none;">
+      <div class="row">
+        <div class="col-12">
+          <form>
+            <div class="mb-3">
+              <label for="userRegister" class="form-label">Usuário</label>
+              <input type="text" class="form-control" id="userRegister">
+              <div id="messageUser" class="form-text" style="display: none;"></div>
+            </div>
+            <div class="mb-3">
+              <label for="password" class="form-label">Senha</label>
+              <input type="password" class="form-control" id="password">
+            </div>
+            <button class="btn btn-primary" onclick="client.register(event)">Cadastrar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="container" id="login" style="display: none;">
+      <div class="row">
+        <div class="col-12">
+          <form>
+            <div class="mb-3">
+              <label for="passwordLogin" class="form-label">Senha</label>
+              <input type="password" class="form-control" id="passwordLogin">
+            </div>
+            <button class="btn btn-primary" onclick="client.login(event)">Login</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- <div id="login">
       <h2>Login</h2>
       <div id="input" class="form">
         <input type="text" name="name" id="name" placeholder="Nome de Usuário">
@@ -80,11 +116,296 @@
       <div id="root" class="chat">
       </div>
     </div>
+     -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/4.10.10/openpgp.min.js" integrity="sha512-JqTHXuQmit4aMscxUcxICZlTL/71uKe+zp+T1KrYLErbc++MulJmfcoK35eAoC8QHmhFSSLfayem93XTq2PV7g==" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.1/socket.io.min.js"></script>
+    <!-- JavaScript Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js" integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW" crossorigin="anonymous"></script>
 
     <script>
       let socket = '';
       const client = {
-        login(){
+        clientTokenPrivateKey: '6b657920646520617574656e74696361c3a7c3a36f2064612061706c696361c3a7c3a36f',
+        clientPrivateKey: `-----BEGIN PGP PRIVATE KEY BLOCK-----
+Version: OpenPGP.js v4.10.10
+Comment: https://openpgpjs.org
+
+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
+oAEVH+AV8FltpnGGbOEBKiOAoZViBHfq
+=S49+
+-----END PGP PRIVATE KEY BLOCK-----
+`,
+        serverPublicKey: `-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: OpenPGP.js v4.10.10
+Comment: https://openpgpjs.org
+
+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
+HOCM2VM=
+=0jyA
+-----END PGP PUBLIC KEY BLOCK-----
+`,
+        async load(){
+          console.log('Ola')
+          const userLogged = localStorage.getItem('logged');
+          if(!userLogged){
+            return document.querySelector('#register').style.display = '';
+          }
+
+          const passphrase = sessionStorage.getItem(`passphrase`);
+          if(!passphrase){
+            return document.querySelector('#login').style.display = '';
+          }
+
+          try {
+            const privateKeyArmored = localStorage.getItem(`${userLogged}.user:key`);
+
+            const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+
+            await privateKey.decrypt(passphrase);
+          } catch (err) {
+            sessionStorage.removeItem(`passphrase`);
+            return document.querySelector('#login').style.display = '';
+          }
+        },
+        async register(event){
+          event.preventDefault();
+          try {
+            const user = document.querySelector('#userRegister').value;
+            const passphrase = document.querySelector('#password').value;
+
+            const keyGenerated = await openpgp.generateKey({
+              numBits: 4096,
+              passphrase,
+              userIds: [{ name: user, email: `${user}.user@chatsecret.mh4sh.dev` }]
+            });
+
+
+            const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(client.clientPrivateKey);
+            await privateKey.decrypt(client.clientTokenPrivateKey);
+
+            const publicKeys = (await openpgp.key.readArmored(client.serverPublicKey)).keys[0];
+
+            const { data: key } = await openpgp.encrypt({
+              message: openpgp.message.fromText(keyGenerated.publicKeyArmored),
+              publicKeys,
+              privateKeys: [privateKey]
+            });
+
+
+            const response = await fetch('/account', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({user, key})
+            });
+
+            if(response.status!==201){
+              let errorResponse= await response.json();
+              throw errorResponse;
+            }
+
+            localStorage.setItem(`${user}.user:key`, keyGenerated.privateKeyArmored);
+            localStorage.setItem(`logged`, user);
+            sessionStorage.setItem(`passphrase`, passphrase);
+
+            document.querySelector('#register').style.display = 'none';
+
+            return client.load();
+          } catch(err){
+            if(err.messageCode === '1'){
+              document.querySelector('#messageUser').style.display = '';
+              document.querySelector('#messageUser').innerText = 'Usuário já existe, tente outro usuário!';
+            } else {
+              console.log(err);
+            }
+          }
+        },
+        async login(event){
+          event.preventDefault();
+          try {
+            const passphrase = document.querySelector('#passwordLogin').value;
+
+            const user = localStorage.getItem(`logged`);
+            const privateKeyArmored = localStorage.getItem(`${user}.user:key`);
+
+            const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+
+            await privateKey.decrypt(passphrase);
+
+            sessionStorage.setItem(`passphrase`, passphrase);
+            document.querySelector('#login').style.display = 'none';
+            location.reload(); //Usado por que a div não esta sumindo
+
+            client.load();
+          } catch (err){
+            console.log(err);
+          }
+        },
+        loginb(){
           const userLogged = localStorage.getItem('userName');
 
           const userName = userLogged ? userLogged : document.querySelector('#name').value;
@@ -108,11 +429,26 @@
             }
           });
 
-
-          socket.on("message:receive", function(data) {
+          socket.on("message:receive", async function(data) {
             const userLogged = localStorage.getItem('userName');
 
-            const { message, userName } = data;
+            const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(client.clientPrivateKey);
+
+            await privateKey.decrypt(
+              '6b657920646520617574656e74696361c3a7c3a36f2064612061706c696361c3a7c3a36f'
+            );
+
+            const decrypted = await openpgp.decrypt({
+              message: await openpgp.message.readArmored(data),
+              publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
+              privateKeys: [privateKey]
+            });
+
+            console.log(decrypted.data);
+
+            const { message, userName } = JSON.parse(decrypted.data);
 
             let messageElement = document.createElement("div");
             messageElement.classList.add("container");
@@ -135,8 +471,7 @@
         }
       }
 
-      const userLogged = localStorage.getItem('userName');
-      if(userLogged) client.login();
+      client.load();
 
     </script>
 

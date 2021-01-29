@@ -1,5 +1,7 @@
 import { Server } from 'http';
 import * as socketIo from 'socket.io';
+import * as openpgp from 'openpgp';
+import fs from 'fs';
 
 import { verifySocker, SocketAuth } from '../middlewares/auth';
 
@@ -8,12 +10,7 @@ export interface SocketQuery {
   userName: string;
 }
 
-interface Message {
-  message: string;
-  userName: string;
-}
-
-const messages: Message[] = [];
+const messages: string[] = [];
 
 const connection = (server: Server): void => {
   const io = require('socket.io')({
@@ -42,7 +39,37 @@ const connection = (server: Server): void => {
       });
 
       socket.on('message:new', async (message, timestamp = 1000) => {
-        const newMessage = { message, userName: socketQuery.userName };
+        const publicKeyClient = await fs.readFileSync(
+          'keys/client.cpu',
+          'utf-8'
+        );
+        const privateKeyServer = await fs.readFileSync(
+          'keys/server.cpr',
+          'utf-8'
+        );
+
+        const objectMessage = {
+          message,
+          userName: socketQuery.userName
+        };
+
+        const {
+          keys: [privateKey]
+        } = await openpgp.key.readArmored(privateKeyServer);
+        await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
+
+        const publicKeys = await Promise.all(
+          [publicKeyClient].map(async key => {
+            return (await openpgp.key.readArmored(key)).keys[0];
+          })
+        );
+
+        const { data: newMessage } = await openpgp.encrypt({
+          message: openpgp.message.fromText(JSON.stringify(objectMessage)),
+          publicKeys,
+          privateKeys: [privateKey]
+        });
+
         messages.push(newMessage);
 
         socket.emit('message:receive', newMessage);
