@@ -98,8 +98,7 @@ const connection = (server: Server): void => {
                   contact: contact.user
                 })
               ),
-              publicKeys: (await openpgp.key.readArmored(publicKeyDestination))
-                .keys,
+              publicKeys: (await openpgp.key.readArmored(publicKey)).keys,
               privateKeys: [privateKey]
             });
 

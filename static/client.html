@@ -432,6 +432,7 @@ HOCM2VM=
           const privateKeyArmored = localStorage.getItem(`${userName}.user:key`);
 
           const contacts = JSON.parse(localStorage.getItem(`${userName}.contacts`) || '[]');
+          const contactsPendingList = JSON.parse(localStorage.getItem(`${userName}.contactsPending`) || '[]');
 
           // document.querySelector('#title').innerHTML = `Mensagens (${userName})`;
 
@@ -449,6 +450,14 @@ HOCM2VM=
           contactElement.innerHTML = `<td colspan="3">@${userName}</td>`;
           document.querySelector('#contacts-list').append(contactElement)
 
+          for (let contactPendingList of contactsPendingList){
+            const contactElement = document.createElement('tr');
+            contactElement.id = contactPendingList.fromUser;
+            contactElement.innerHTML = `<td>@${contactPendingList.fromUser}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.acceptContact('${contactPendingList.fromUser}')">Aceitar</button></td><td>Solicitação</td>`;
+            document.querySelector('#contacts-list').append(contactElement);
+          }
+
+
           for (let contact of contacts) {
             const contactElement = document.createElement('tr');
             contactElement.id = contact.user;
@@ -459,12 +468,13 @@ HOCM2VM=
                 contactElement.innerHTML = `<td colspan="2">@${contact.user}</td><td>Pendente</td>`;
                 break;
               case '1':
-                contactElement.innerHTML = `<td>@${contact.user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${contact.user}')">Conversas</button></td><td>Atualizando</td>`;
+                contactElement.innerHTML = `<td>@${contact.user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${contact.user}')">Conversa</button></td><td>Atualizando</td>`;
                 break;
             }
 
             document.querySelector('#contacts-list').append(contactElement)
           }
+
 
 
           socket = io("http://localhost:3000", {
@@ -524,18 +534,40 @@ HOCM2VM=
               privateKeys: [privateKey]
             });
 
-            const contact = JSON.parse(decrypted.data);
+            const contactForAccept = JSON.parse(decrypted.data);
+
+
+            const contacts = JSON.parse(localStorage.getItem(`${userLogged}.contacts`) || '[]');
+            const indexContact = contacts.findIndex(contactItem => contactItem.user === contactForAccept.fromUser);
+            if(indexContact !== -1){
+              const contactExistent = JSON.parse(localStorage.getItem(`${userLogged}.contact:${contactForAccept.fromUser}`));
+              contactExistent.publicKeyExtern = contactForAccept.privateKey;
+              localStorage.setItem(`${userLogged}.contact:${contactForAccept.fromUser}`, JSON.stringify(contactExistent));
+
+              document.querySelector(`#${contactForAccept.fromUser}`).innerHTML = `<td>@${contactForAccept.fromUser}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${contactForAccept.fromUser}')">Conversa</button></td><td>Aceito</td>`;
+
+              contacts.splice(indexContact, 1);
+
+              contacts.push({
+                user: contactForAccept.fromUser,
+                status: '1'
+              })
+              localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
+
+              return ;
+            }
 
             const contactsPending = JSON.parse(localStorage.getItem(`${userLogged}.contactsPending`) || '[]');
-            contactsPending.push(data);
+
+            contactsPending.push(contactForAccept);
             localStorage.setItem(`${userLogged}.contactsPending`, JSON.stringify(contactsPending));
 
             let contactElement = document.createElement('tr');
-            contactElement.id = contact.user;
-            contactElement.innerHTML = `<td>@${fromUser}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.acceptContact('${contact.fromUser}')">Aceitar</button></td><td>Novo</td>`;
-            document.querySelector('#contacts-list').prepend(contactElement);
+            contactElement.id = contactForAccept.fromUser;
+            contactElement.innerHTML = `<td>@${contactForAccept.fromUser}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.acceptContact('${contactForAccept.fromUser}')">Aceitar</button></td><td>Solicitação</td>`;
+            document.querySelector(`#${userLogged}`).after(contactElement);
 
-            console.log(data)
+            console.log(contactForAccept)
           });
         },
         async addContact(){
@@ -580,6 +612,85 @@ HOCM2VM=
           let contactElement = document.createElement('tr');
           contactElement.id = user;
           contactElement.innerHTML = `<td colspan="2">@${user}</td><td>Pendente</td>`;
+          document.querySelector('#contacts-list').append(contactElement);
+
+          document.querySelector('#new-contact').value = '';
+
+
+          const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+          await privateKey.decrypt(passphrase);
+
+
+          const publicKeys = await Promise.all(
+            [client.serverPublicKey].map(async key => {
+              return (await openpgp.key.readArmored(key)).keys[0];
+            })
+          );
+
+          const { data: newContact } = await openpgp.encrypt({
+            message: openpgp.message.fromText(JSON.stringify({ fromUser: userLogged, user, privateKey: chatKey.publicKeyArmored })),
+            publicKeys,
+            privateKeys: [privateKey]
+          });
+
+
+          client.connection.emit("contact:add", newContact);
+        },
+        async acceptContact(user){
+          const userLogged = localStorage.getItem(`logged`);
+          const passphrase = sessionStorage.getItem(`passphrase`);
+          const privateKeyArmored = localStorage.getItem(`${userLogged}.user:key`);
+
+          const contactsPending = JSON.parse(localStorage.getItem(`${userLogged}.contactsPending`) || '[]');
+          const indexContactPending = contactsPending.findIndex(contactItem => contactItem.fromUser === user);
+          if(indexContactPending === -1){
+            document.querySelector('#messageContact').style.display = '';
+            document.querySelector('#messageContact').innerText = 'Contato não encontrado na lista de pendentes!';
+            return ;
+          }
+
+          const contacts = JSON.parse(localStorage.getItem(`${userLogged}.contacts`) || '[]');
+          const indexContact = contacts.findIndex(contactItem => contactItem.user === user);
+          if(indexContact !== -1){
+            document.querySelector('#messageContact').style.display = '';
+            document.querySelector('#messageContact').innerText = 'Contato já adicionado!';
+            return ;
+          } else {
+            document.querySelector('#messageContact').style.display = 'none';
+          }
+          const { privateKey: publicKeyExtern} = contactsPending[indexContactPending];
+
+          const chatKey = await openpgp.generateKey({
+              numBits: 4096,
+              passphrase,
+              userIds: [{ name: user, email: `${userLogged}_${user}.chat@chatsecret.mh4sh.dev` }]
+            });
+
+
+          contactsPending.splice(indexContactPending, 1);
+          localStorage.setItem(`${userLogged}.contactsPending`, JSON.stringify(contactsPending));
+          document.querySelector(`#${user}`).remove();
+
+          contacts.push({
+            user,
+            status: '1'
+          })
+
+          const contact = {
+            user,
+            privateKey: chatKey.privateKeyArmored,
+            publicKey: chatKey.publicKeyArmored,
+            publicKeyExtern
+          };
+
+          localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
+          localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
+
+          let contactElement = document.createElement('tr');
+          contactElement.id = user;
+          contactElement.innerHTML = `<td>@${user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${user}')">Conversa</button></td><td>Aceito</td>`;
           document.querySelector('#contacts-list').append(contactElement);
 
           document.querySelector('#new-contact').value = '';
