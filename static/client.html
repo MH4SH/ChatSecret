@@ -905,6 +905,10 @@ HOCM2VM=
           client.connection.emit("contact:add", newContact);
         },
         async startConversation(user){
+          console.time('Read');
+          const userLogged = localStorage.getItem('logged');
+          const passphrase = sessionStorage.getItem(`passphrase`);
+
           document.querySelector('#title').innerHTML = `Mensagens -> ${user}`;
           client.chatOpen = user;
 
@@ -912,24 +916,69 @@ HOCM2VM=
 
           document.querySelector('#contacts').style.display = "none";
           document.querySelector('#messages').style.display = "";
-
           try {
-            await new Promise((resolve, reject) => {
+            const messages = await new Promise((resolve, reject) => {
               const transactionRead = client.db.transaction(client.chatsStore);
               const objectStore = transactionRead.objectStore(client.chatsStore);
 
               const index = objectStore.index('contact');
               let singleKeyRange = IDBKeyRange.only(client.chatOpen);
               index.getAll(singleKeyRange).onsuccess = (event) => {
-                console.log(event.target.result);
-                const cursor = event.target.result;
-                // if(cursor){
-                //   resolve(cursor);
-                //   cursor.continue();
-                // }
+                resolve(event.target.result);
               }
             });
 
+
+            const contact = await new Promise((resolve, reject) => {
+              const transactionRead = client.db.transaction(client.contactStore);
+              const objectStore = transactionRead.objectStore(client.contactStore);
+
+              let singleKeyRange = IDBKeyRange.only(client.chatOpen);
+              objectStore.openCursor(singleKeyRange).onsuccess = (event) => {
+                const cursor = event.target.result;
+                if(cursor){
+                  resolve(JSON.parse(cursor.value.data));
+                }
+              }
+            });
+
+            const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(contact.privateKey);
+            await privateKey.decrypt(passphrase);
+
+
+            const publicKeys = await Promise.all(
+              [contact.publicKey, contact.publicKeyExtern].map(async key => {
+                return (await openpgp.key.readArmored(key)).keys[0];
+              })
+            );
+
+
+            for await (let messageDB of messages){
+              console.time(messageDB.id);
+              const {data: messageDBDecrypted} = await openpgp.decrypt({
+                message: await openpgp.message.readArmored(messageDB.message),
+                publicKeys: publicKeys,
+                privateKeys: [privateKey]
+              });
+
+              let messageFinal = JSON.parse(messageDBDecrypted);
+
+              let messageElement = document.createElement("div");
+              messageElement.classList.add("container");
+
+              if(messageDB.itsMine){
+                messageElement.classList.add("darker");
+                messageElement.innerHTML = `<b>${userLogged}</b> <p>${messageFinal.message}</p>`;
+              } else {
+                messageElement.innerHTML = `<b>${messageDB.contact}</b> <p>${messageFinal.message}</p>`;
+              }
+              document.querySelector("#root").insertAdjacentElement('afterbegin', messageElement);
+              console.timeEnd(messageDB.id);
+            }
+
+            console.timeEnd('Read');
           } catch (err) {
             err
           }
