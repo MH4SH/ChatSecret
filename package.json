@@ -1,6 +1,6 @@
 {
     "name": "chat_secret_server",
-    "version": "0.0.1",
+    "version": "0.3.0",
     "main": "index.js",
     "author": "Marcon Willian Oliveira Neves <oi@marconwillian.dev>",
     "license": "MIT",
