@@ -27,8 +27,13 @@ const conversation = (server: Server): void => {
     .on('connection', (socket: SocketAuth) => {
       const socketQuery = socket.handshake.query as SocketQuery;
 
-      console.log(`Client entrou [id=${socket.id}]`);
+      console.log(`Client entrou conversation [id=${socket.id}]`);
       socket.join(`sala-1`);
+
+      Redis.hmset(`Users:${socketQuery.userName}:data`, {
+        conversation: socket.id,
+        lastAccess: new Date().getTime()
+      });
 
       messages.forEach(message => {
         socket.emit('message:receive', message);

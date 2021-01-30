@@ -99,6 +99,31 @@
       </div>
     </div>
 
+    <div class="container" id="contacts" style="display: none;">
+      <div class="row">
+        <div class="col-12">
+          <div class="input-group mb-3">
+            <input type="text" class="form-control" id="new-contact" placeholder="Nome de usuário" aria-label="Nome de usuário" aria-describedby="add-contact">
+            <button class="btn btn-info" type="button" id="add-contact" onclick="client.addContact()">Adicionar</button>
+          </div>
+          <div class="col-12 mb-5" id="messageContact" style="display: none;"></div>
+        </div>
+        <div class="col-12">
+          <table class="table table-hover">
+            <thead>
+              <tr>
+                <th scope="col">User</th>
+                <th scope="col">Mensagem</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody id="contacts-list">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div id="messages" style="display: none;">
       <h2 id="title">Mensagens</h2>
       <div id="input" class="form">
@@ -118,6 +143,7 @@
     <script>
       let socket = '';
       const client = {
+        connection: '',
         clientTokenPrivateKey: '6b657920646520617574656e74696361c3a7c3a36f2064612061706c696361c3a7c3a36f',
         clientPrivateKey: `-----BEGIN PGP PRIVATE KEY BLOCK-----
 Version: OpenPGP.js v4.10.10
@@ -400,20 +426,124 @@ HOCM2VM=
             console.log(err);
           }
         },
+        async addContact(){
+          const user = document.querySelector('#new-contact').value.toLowerCase();
+          const userLogged = localStorage.getItem(`logged`);
+          const passphrase = sessionStorage.getItem(`passphrase`);
+          const privateKeyArmored = localStorage.getItem(`${userLogged}.user:key`);
+
+          const contacts = JSON.parse(localStorage.getItem(`${userLogged}.contacts`) || '[]');
+          const indexContact = contacts.findIndex(contactItem => contactItem.user === user);
+
+          if(indexContact !== -1){
+            document.querySelector('#messageContact').style.display = '';
+            document.querySelector('#messageContact').innerText = 'Contato já adicionado!';
+            return ;
+          } else {
+            document.querySelector('#messageContact').style.display = 'none';
+          }
+
+          const chatKey = await openpgp.generateKey({
+              numBits: 4096,
+              passphrase,
+              userIds: [{ name: user, email: `${userLogged}_${user}.chat@chatsecret.mh4sh.dev` }]
+            });
+
+
+          contacts.push({
+            user,
+            status: '0'
+          })
+
+          const contact = {
+            user,
+            privateKey: chatKey.privateKeyArmored,
+            publicKey: chatKey.publicKeyArmored,
+            publicKeyExtern: ''
+          };
+
+          localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
+          localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
+
+          let contactElement = document.createElement('tr');
+          contactElement.id = user;
+          contactElement.innerHTML = `<td colspan="2">@${user}</td><td>Pendente</td>`;
+          document.querySelector('#contacts-list').append(contactElement);
+
+          document.querySelector('#new-contact').value = '';
+
+
+          const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+          await privateKey.decrypt(passphrase);
+
+
+          const publicKeys = await Promise.all(
+            [client.serverPublicKey].map(async key => {
+              return (await openpgp.key.readArmored(key)).keys[0];
+            })
+          );
+
+          const { data: newContact } = await openpgp.encrypt({
+            message: openpgp.message.fromText(JSON.stringify({ fromUser: userLogged, user, privateKey: chatKey.publicKeyArmored })),
+            publicKeys,
+            privateKeys: [privateKey]
+          });
+
+
+          client.connection.emit("contact:add", newContact);
+        },
         startApplication(){
           const userName = localStorage.getItem('logged');
           const passphrase = sessionStorage.getItem(`passphrase`);
           const privateKeyArmored = localStorage.getItem(`${userName}.user:key`);
 
-          document.querySelector('#title').innerHTML = `Mensagens (${userName})`;
+          const contacts = JSON.parse(localStorage.getItem(`${userName}.contacts`) || '[]');
 
-          document.querySelector('#messages').style.display = "";
-          document.querySelector("#message").addEventListener("keydown", ({key}) => {
-              if (key === "Enter") client.sendMessage()
-          })
+          // document.querySelector('#title').innerHTML = `Mensagens (${userName})`;
+
+          // document.querySelector('#messages').style.display = "";
+          // document.querySelector("#message").addEventListener("keydown", ({key}) => {
+          //     if (key === "Enter") client.sendMessage()
+          // })
+
+          // localStorage.setItem('mar.contacts', JSON.stringify([{user: "marcon", status: "0"}, {user: "jao", status: "0"}]));
+
+          document.querySelector('#contacts').style.display = '';
+
+          let contactElement = document.createElement('tr');
+          contactElement.id = userName;
+          contactElement.innerHTML = `<td colspan="3">@${userName}</td>`;
+          document.querySelector('#contacts-list').append(contactElement)
+
+          for (let contact of contacts) {
+            const contactElement = document.createElement('tr');
+            contactElement.id = contact.user;
+
+            let statusDescription = '';
+            switch (contact.status) {
+              case '0':
+                contactElement.innerHTML = `<td colspan="2">@${contact.user}</td><td>Pendente</td>`;
+                break;
+              case '1':
+                contactElement.innerHTML = `<td>@${contact.user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${contact.user}')">Conversas</button></td><td>Atualizando</td>`;
+                break;
+            }
+
+            document.querySelector('#contacts-list').append(contactElement)
+          }
+
 
           socket = io("http://localhost:3000", {
             path: '/conversation',
+            query: {
+              userName
+            }
+          });
+
+          client.connection = io("http://localhost:3000", {
+            path: '/connection',
             query: {
               userName
             }
@@ -446,6 +576,24 @@ HOCM2VM=
             messageElement.innerHTML = `<b>${userName}</b> <p>${message}</p>`;
 
             document.querySelector("#root").insertAdjacentElement('afterbegin', messageElement);
+          });
+
+          client.connection.on("contact:new", async function(contact){
+            const userLogged = localStorage.getItem('logged');
+
+            const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+            await privateKey.decrypt(passphrase);
+
+            const decrypted = await openpgp.decrypt({
+              message: await openpgp.message.readArmored(contact),
+              publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
+              privateKeys: [privateKey]
+            });
+
+            const data = JSON.parse(decrypted.data);
+            console.log(data)
           });
         },
         async sendMessage(){
