@@ -1,5 +1,4 @@
 node_modules/
 dist/
 *.env
-keys/
 yarn-error.log
