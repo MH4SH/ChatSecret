@@ -46,6 +46,7 @@ const conversation = (server: Server): void => {
       socket.on(
         'message:new',
         async ({ to, message }, timestamp = 1000): Promise<void | boolean> => {
+          console.time('New Message');
           const privateKeyServer = await fs.readFileSync(
             'keys/server.cpr',
             'utf-8'
@@ -77,7 +78,7 @@ const conversation = (server: Server): void => {
             privateKeys: [privateKey]
           });
 
-          socket.emit('message:receive', returnMessage);
+          // socket.emit('message:receive', returnMessage);
 
           const keyUserTo = (
             await new Promise<string[]>(resolve => {
@@ -99,7 +100,8 @@ const conversation = (server: Server): void => {
             privateKeys: [privateKey]
           });
           socket.to(to).emit('message:receive', messageToSend);
-
+          console.log('Finish');
+          console.timeEnd('New Message');
           return true;
         }
       );
