@@ -1,9 +1,9 @@
 import { Server } from 'http';
 
-import Connection from './Connection';
+import Conversation from './Conversation';
 
 const socker = (server: Server): void => {
-  Connection(server);
+  Conversation(server);
 };
 
 export default socker;

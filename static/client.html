@@ -99,15 +99,7 @@
       </div>
     </div>
 
-    <!-- <div id="login">
-      <h2>Login</h2>
-      <div id="input" class="form">
-        <input type="text" name="name" id="name" placeholder="Nome de Usuário">
-        <button onclick="client.login()">Login</button>
-      </div>
-    </div>
-
-    <div id="logged" style="display: none;">
+    <div id="messages" style="display: none;">
       <h2 id="title">Mensagens</h2>
       <div id="input" class="form">
         <input type="text" name="message" id="message">
@@ -116,7 +108,8 @@
       <div id="root" class="chat">
       </div>
     </div>
-     -->
+
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/4.10.10/openpgp.min.js" integrity="sha512-JqTHXuQmit4aMscxUcxICZlTL/71uKe+zp+T1KrYLErbc++MulJmfcoK35eAoC8QHmhFSSLfayem93XTq2PV7g==" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.1/socket.io.min.js"></script>
     <!-- JavaScript Bundle with Popper -->
@@ -302,7 +295,6 @@ HOCM2VM=
 -----END PGP PUBLIC KEY BLOCK-----
 `,
         async load(){
-          console.log('Ola')
           const userLogged = localStorage.getItem('logged');
           if(!userLogged){
             return document.querySelector('#register').style.display = '';
@@ -321,6 +313,8 @@ HOCM2VM=
             } = await openpgp.key.readArmored(privateKeyArmored);
 
             await privateKey.decrypt(passphrase);
+
+            client.startApplication();
           } catch (err) {
             sessionStorage.removeItem(`passphrase`);
             return document.querySelector('#login').style.display = '';
@@ -367,6 +361,7 @@ HOCM2VM=
             }
 
             localStorage.setItem(`${user}.user:key`, keyGenerated.privateKeyArmored);
+            localStorage.setItem(`${user}.user:publicKey`, keyGenerated.publicKeyArmored);
             localStorage.setItem(`logged`, user);
             sessionStorage.setItem(`passphrase`, passphrase);
 
@@ -405,48 +400,39 @@ HOCM2VM=
             console.log(err);
           }
         },
-        loginb(){
-          const userLogged = localStorage.getItem('userName');
-
-          const userName = userLogged ? userLogged : document.querySelector('#name').value;
-
-          localStorage.setItem('userName', userName)
+        startApplication(){
+          const userName = localStorage.getItem('logged');
+          const passphrase = sessionStorage.getItem(`passphrase`);
+          const privateKeyArmored = localStorage.getItem(`${userName}.user:key`);
 
           document.querySelector('#title').innerHTML = `Mensagens (${userName})`;
 
-          document.querySelector('#login').style.display = "none";
-          document.querySelector('#logged').style.display = "";
+          document.querySelector('#messages').style.display = "";
           document.querySelector("#message").addEventListener("keydown", ({key}) => {
               if (key === "Enter") client.sendMessage()
           })
 
-
           socket = io("http://localhost:3000", {
-            path: '/communication',
+            path: '/conversation',
             query: {
-              storeId: 'store-1',
               userName
             }
           });
 
           socket.on("message:receive", async function(data) {
-            const userLogged = localStorage.getItem('userName');
+            const userLogged = localStorage.getItem('logged');
 
             const {
               keys: [privateKey]
-            } = await openpgp.key.readArmored(client.clientPrivateKey);
+            } = await openpgp.key.readArmored(privateKeyArmored);
 
-            await privateKey.decrypt(
-              '6b657920646520617574656e74696361c3a7c3a36f2064612061706c696361c3a7c3a36f'
-            );
+            await privateKey.decrypt(passphrase);
 
             const decrypted = await openpgp.decrypt({
               message: await openpgp.message.readArmored(data),
               publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
               privateKeys: [privateKey]
             });
-
-            console.log(decrypted.data);
 
             const { message, userName } = JSON.parse(decrypted.data);
 
@@ -462,10 +448,34 @@ HOCM2VM=
             document.querySelector("#root").insertAdjacentElement('afterbegin', messageElement);
           });
         },
-        sendMessage(){
+        async sendMessage(){
           const message = document.querySelector("#message").value;
+          const userName = localStorage.getItem('logged');
+          const passphrase = sessionStorage.getItem(`passphrase`);
+          const privateKeyArmored = localStorage.getItem(`${userName}.user:key`);
+          const publicKeyArmored = localStorage.getItem(`${userName}.user:publicKey`);
+
           if(message){
-            socket.emit("message:new", message);
+            const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+
+            await privateKey.decrypt(passphrase);
+
+
+            const publicKeys = await Promise.all(
+              [client.serverPublicKey, publicKeyArmored].map(async key => {
+                return (await openpgp.key.readArmored(key)).keys[0];
+              })
+            );
+
+            const { data: newMessage } = await openpgp.encrypt({
+              message: openpgp.message.fromText(JSON.stringify({message, userName})),
+              publicKeys,
+              privateKeys: [privateKey]
+            });
+
+            socket.emit("message:new", newMessage);
             document.querySelector("#message").value = "";
           }
         }

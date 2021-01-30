@@ -24,7 +24,7 @@ Account.post('/', async (request, response) => {
     privateKeys: [privateKey]
   });
 
-  if (!key.signatures) {
+  if (!key.signatures[0].valid) {
     return response.status(400).json({
       status: 'error',
       messageCode: '2',
