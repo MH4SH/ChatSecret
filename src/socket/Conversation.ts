@@ -68,8 +68,8 @@ const conversation = (server: Server): void => {
           const { data: returnMessage } = await openpgp.encrypt({
             message: openpgp.message.fromText(
               JSON.stringify({
-                isMy: true,
-                to,
+                itsMine: true,
+                contact: to,
                 message
               })
             ),
@@ -90,8 +90,8 @@ const conversation = (server: Server): void => {
           const { data: messageToSend } = await openpgp.encrypt({
             message: openpgp.message.fromText(
               JSON.stringify({
-                isMy: false,
-                from: socketQuery.userName,
+                itsMine: false,
+                contact: socketQuery.userName,
                 message
               })
             ),

@@ -148,9 +148,10 @@
         outDB: '',
         dbName: 'chatSecret',
         contactStore: 'contacts',
+        chatsStore: 'chats',
         createDB(){
           if(window.indexedDB){
-            const request = window.indexedDB.open(client.dbName, 4);
+            const request = window.indexedDB.open(client.dbName, 5);
 
             request.onsuccess = (event) => {
               client.db = event.target.result;
@@ -172,6 +173,19 @@
               );
               contactsStore.createIndex('data', 'data', {unique: false });
 
+              const chatStore = client.db.createObjectStore(client.chatsStore,
+                {
+                  keyPath: 'id',
+                  autoIncrement: true
+                }
+              );
+
+              chatStore.createIndex('contact', 'contact', { unique: false });
+              chatStore.createIndex('time', 'time', { unique: false });
+              chatStore.createIndex('itsMine', 'itsMine', { unique: false });
+              chatStore.createIndex('message', 'message', { unique: false });
+              chatStore.createIndex('validServer', 'validServer', { unique: false });
+              chatStore.createIndex('validUser', 'validUser', { unique: false });
 
               console.log('on UpgradeNeed', event );
 
@@ -530,15 +544,27 @@ HOCM2VM=
             }
           });
 
-          client.conversation.on("message:receive", async function(data) {
-            console.log(data);
-
+          client.conversation.on("message:receive", async function(messagePgp) {
             const userLogged = localStorage.getItem('logged');
+
+            const {
+              keys: [privateKeyUser]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+            await privateKeyUser.decrypt(passphrase);
+
+            const fistDecrypted = await openpgp.decrypt({
+              message: await openpgp.message.readArmored(messagePgp),
+              publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
+              privateKeys: [privateKeyUser]
+            });
+
+            const data = JSON.parse(fistDecrypted.data);
+
             const contact = await new Promise((resolve, reject) => {
               const transactionRead = client.db.transaction(client.contactStore);
               const objectStore = transactionRead.objectStore(client.contactStore);
 
-              let singleKeyRange = IDBKeyRange.only('123');
+              let singleKeyRange = IDBKeyRange.only(data.contact);
               objectStore.openCursor(singleKeyRange).onsuccess = (event) => {
                 const cursor = event.target.result;
                 if(cursor){
@@ -554,21 +580,23 @@ HOCM2VM=
             await privateKey.decrypt(passphrase);
 
             const decrypted = await openpgp.decrypt({
-              message: await openpgp.message.readArmored(data),
-              // publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
+              message: await openpgp.message.readArmored(data.message),
+              publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
               privateKeys: [privateKey]
             });
 
-            const { message, userName } = JSON.parse(decrypted.data);
+            const { message  } = JSON.parse(decrypted.data);
 
             let messageElement = document.createElement("div");
             messageElement.classList.add("container");
 
-            if(userLogged===userName){
+            if(data.itsMine){
               messageElement.classList.add("darker");
+              messageElement.innerHTML = `<b>${userLogged}</b> <p>${message}</p>`;
+            } else {
+              messageElement.innerHTML = `<b>${data.contact}</b> <p>${message}</p>`;
             }
 
-            messageElement.innerHTML = `<b>${userName}</b> <p>${message}</p>`;
 
             document.querySelector("#root").insertAdjacentElement('afterbegin', messageElement);
           });
