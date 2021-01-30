@@ -426,74 +426,6 @@ HOCM2VM=
             console.log(err);
           }
         },
-        async addContact(){
-          const user = document.querySelector('#new-contact').value.toLowerCase();
-          const userLogged = localStorage.getItem(`logged`);
-          const passphrase = sessionStorage.getItem(`passphrase`);
-          const privateKeyArmored = localStorage.getItem(`${userLogged}.user:key`);
-
-          const contacts = JSON.parse(localStorage.getItem(`${userLogged}.contacts`) || '[]');
-          const indexContact = contacts.findIndex(contactItem => contactItem.user === user);
-
-          if(indexContact !== -1){
-            document.querySelector('#messageContact').style.display = '';
-            document.querySelector('#messageContact').innerText = 'Contato já adicionado!';
-            return ;
-          } else {
-            document.querySelector('#messageContact').style.display = 'none';
-          }
-
-          const chatKey = await openpgp.generateKey({
-              numBits: 4096,
-              passphrase,
-              userIds: [{ name: user, email: `${userLogged}_${user}.chat@chatsecret.mh4sh.dev` }]
-            });
-
-
-          contacts.push({
-            user,
-            status: '0'
-          })
-
-          const contact = {
-            user,
-            privateKey: chatKey.privateKeyArmored,
-            publicKey: chatKey.publicKeyArmored,
-            publicKeyExtern: ''
-          };
-
-          localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
-          localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
-
-          let contactElement = document.createElement('tr');
-          contactElement.id = user;
-          contactElement.innerHTML = `<td colspan="2">@${user}</td><td>Pendente</td>`;
-          document.querySelector('#contacts-list').append(contactElement);
-
-          document.querySelector('#new-contact').value = '';
-
-
-          const {
-              keys: [privateKey]
-            } = await openpgp.key.readArmored(privateKeyArmored);
-          await privateKey.decrypt(passphrase);
-
-
-          const publicKeys = await Promise.all(
-            [client.serverPublicKey].map(async key => {
-              return (await openpgp.key.readArmored(key)).keys[0];
-            })
-          );
-
-          const { data: newContact } = await openpgp.encrypt({
-            message: openpgp.message.fromText(JSON.stringify({ fromUser: userLogged, user, privateKey: chatKey.publicKeyArmored })),
-            publicKeys,
-            privateKeys: [privateKey]
-          });
-
-
-          client.connection.emit("contact:add", newContact);
-        },
         startApplication(){
           const userName = localStorage.getItem('logged');
           const passphrase = sessionStorage.getItem(`passphrase`);
@@ -592,9 +524,87 @@ HOCM2VM=
               privateKeys: [privateKey]
             });
 
-            const data = JSON.parse(decrypted.data);
+            const contact = JSON.parse(decrypted.data);
+
+            const contactsPending = JSON.parse(localStorage.getItem(`${userLogged}.contactsPending`) || '[]');
+            contactsPending.push(data);
+            localStorage.setItem(`${userLogged}.contactsPending`, JSON.stringify(contactsPending));
+
+            let contactElement = document.createElement('tr');
+            contactElement.id = contact.user;
+            contactElement.innerHTML = `<td>@${fromUser}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.acceptContact('${contact.fromUser}')">Aceitar</button></td><td>Novo</td>`;
+            document.querySelector('#contacts-list').prepend(contactElement);
+
             console.log(data)
           });
+        },
+        async addContact(){
+          const user = document.querySelector('#new-contact').value.toLowerCase();
+          const userLogged = localStorage.getItem(`logged`);
+          const passphrase = sessionStorage.getItem(`passphrase`);
+          const privateKeyArmored = localStorage.getItem(`${userLogged}.user:key`);
+
+          const contacts = JSON.parse(localStorage.getItem(`${userLogged}.contacts`) || '[]');
+          const indexContact = contacts.findIndex(contactItem => contactItem.user === user);
+
+          if(indexContact !== -1){
+            document.querySelector('#messageContact').style.display = '';
+            document.querySelector('#messageContact').innerText = 'Contato já adicionado!';
+            return ;
+          } else {
+            document.querySelector('#messageContact').style.display = 'none';
+          }
+
+          const chatKey = await openpgp.generateKey({
+              numBits: 4096,
+              passphrase,
+              userIds: [{ name: user, email: `${userLogged}_${user}.chat@chatsecret.mh4sh.dev` }]
+            });
+
+
+          contacts.push({
+            user,
+            status: '0'
+          })
+
+          const contact = {
+            user,
+            privateKey: chatKey.privateKeyArmored,
+            publicKey: chatKey.publicKeyArmored,
+            publicKeyExtern: ''
+          };
+
+          localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
+          localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
+
+          let contactElement = document.createElement('tr');
+          contactElement.id = user;
+          contactElement.innerHTML = `<td colspan="2">@${user}</td><td>Pendente</td>`;
+          document.querySelector('#contacts-list').append(contactElement);
+
+          document.querySelector('#new-contact').value = '';
+
+
+          const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+          await privateKey.decrypt(passphrase);
+
+
+          const publicKeys = await Promise.all(
+            [client.serverPublicKey].map(async key => {
+              return (await openpgp.key.readArmored(key)).keys[0];
+            })
+          );
+
+          const { data: newContact } = await openpgp.encrypt({
+            message: openpgp.message.fromText(JSON.stringify({ fromUser: userLogged, user, privateKey: chatKey.publicKeyArmored })),
+            publicKeys,
+            privateKeys: [privateKey]
+          });
+
+
+          client.connection.emit("contact:add", newContact);
         },
         async sendMessage(){
           const message = document.querySelector("#message").value;

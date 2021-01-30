@@ -126,6 +126,47 @@ const connection = (server: Server): void => {
           return true;
         }
       );
+
+      socket.on(
+        'contact:add:received',
+        async (message, timestamp = 1000): Promise<void | boolean> => {
+          const privateKeyServer = await fs.readFileSync(
+            'keys/server.cpr',
+            'utf-8'
+          );
+
+          const publicKey = await new Promise(resolve => {
+            Redis.hmget(
+              `Users:${socketQuery.userName}:data`,
+              'publicKey',
+              (err, data) => resolve(data[0])
+            );
+          });
+
+          const {
+            keys: [privateKey]
+          } = await openpgp.key.readArmored(privateKeyServer);
+          await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
+
+          const decrypted = await openpgp.decrypt({
+            message: await openpgp.message.readArmored(message),
+            publicKeys: (await openpgp.key.readArmored(publicKey)).keys,
+            privateKeys: [privateKey]
+          });
+
+          if (!decrypted.signatures[0].valid) {
+            return false;
+          }
+
+          const contact: { to: string; from: string } = JSON.parse(
+            decrypted.data
+          );
+
+          Redis.del(`Contact:add:${contact.to}:per:${contact.from}`);
+
+          return true;
+        }
+      );
     });
 };
 
