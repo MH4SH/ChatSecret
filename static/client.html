@@ -139,11 +139,49 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.1/socket.io.min.js"></script>
     <!-- JavaScript Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js" integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.9.0/localforage.min.js" integrity="sha512-GkJRKF+k/yzHfJUg9LrNLQhS0jorQe4kES+GHkqtQThCJ5z5A1KwCXH0GYbJApDh/a3ERFvq9xbRJY9mEXzQiA==" crossorigin="anonymous"></script>
 
     <script>
+      let db;
       let socket = '';
       const client = {
+        outDB: '',
+        dbName: 'chatSecret',
+        contactStore: 'contacts',
+        createDB(){
+          if(window.indexedDB){
+            const request = window.indexedDB.open(client.dbName, 4);
+
+            request.onsuccess = (event) => {
+              client.db = event.target.result;
+              client.load();
+              console.log('on Success', event );
+            }
+
+            request.onerror = (event) => {
+              console.log('on Error', event );
+            }
+
+            request.onupgradeneeded = (event) => {
+              client.db = event.target.result;
+
+              const contactsStore = client.db.createObjectStore(client.contactStore,
+                {
+                  keyPath: 'user'
+                }
+              );
+              contactsStore.createIndex('data', 'data', {unique: false });
+
+
+              console.log('on UpgradeNeed', event );
+
+            }
+          } else {
+            console.log('no support');
+          }
+        },
         connection: '',
+        conversation: '',
         clientTokenPrivateKey: '6b657920646520617574656e74696361c3a7c3a36f2064612061706c696361c3a7c3a36f',
         clientPrivateKey: `-----BEGIN PGP PRIVATE KEY BLOCK-----
 Version: OpenPGP.js v4.10.10
@@ -320,6 +358,7 @@ HOCM2VM=
 =0jyA
 -----END PGP PUBLIC KEY BLOCK-----
 `,
+        chatOpen: '',
         async load(){
           const userLogged = localStorage.getItem('logged');
           if(!userLogged){
@@ -437,9 +476,9 @@ HOCM2VM=
           // document.querySelector('#title').innerHTML = `Mensagens (${userName})`;
 
           // document.querySelector('#messages').style.display = "";
-          // document.querySelector("#message").addEventListener("keydown", ({key}) => {
-          //     if (key === "Enter") client.sendMessage()
-          // })
+          document.querySelector("#message").addEventListener("keydown", ({key}) => {
+              if (key === "Enter") client.sendMessage()
+          })
 
           // localStorage.setItem('mar.contacts', JSON.stringify([{user: "marcon", status: "0"}, {user: "jao", status: "0"}]));
 
@@ -468,7 +507,7 @@ HOCM2VM=
                 contactElement.innerHTML = `<td colspan="2">@${contact.user}</td><td>Pendente</td>`;
                 break;
               case '1':
-                contactElement.innerHTML = `<td>@${contact.user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${contact.user}')">Conversa</button></td><td>Atualizando</td>`;
+                contactElement.innerHTML = `<td>@${contact.user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.startConversation('${contact.user}')">Conversa</button></td><td>Atualizando</td>`;
                 break;
             }
 
@@ -477,7 +516,7 @@ HOCM2VM=
 
 
 
-          socket = io("http://localhost:3000", {
+          client.conversation = io("http://localhost:3000", {
             path: '/conversation',
             query: {
               userName
@@ -491,18 +530,32 @@ HOCM2VM=
             }
           });
 
-          socket.on("message:receive", async function(data) {
+          client.conversation.on("message:receive", async function(data) {
+            console.log(data);
+
             const userLogged = localStorage.getItem('logged');
+            const contact = await new Promise((resolve, reject) => {
+              const transactionRead = client.db.transaction(client.contactStore);
+              const objectStore = transactionRead.objectStore(client.contactStore);
+
+              let singleKeyRange = IDBKeyRange.only('123');
+              objectStore.openCursor(singleKeyRange).onsuccess = (event) => {
+                const cursor = event.target.result;
+                if(cursor){
+                  resolve(JSON.parse(cursor.value.data));
+                }
+              }
+            });
 
             const {
               keys: [privateKey]
-            } = await openpgp.key.readArmored(privateKeyArmored);
+            } = await openpgp.key.readArmored(contact.privateKey);
 
             await privateKey.decrypt(passphrase);
 
             const decrypted = await openpgp.decrypt({
               message: await openpgp.message.readArmored(data),
-              publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
+              // publicKeys: (await openpgp.key.readArmored(client.serverPublicKey)).keys,
               privateKeys: [privateKey]
             });
 
@@ -539,19 +592,66 @@ HOCM2VM=
 
             const contacts = JSON.parse(localStorage.getItem(`${userLogged}.contacts`) || '[]');
             const indexContact = contacts.findIndex(contactItem => contactItem.user === contactForAccept.fromUser);
-            if(indexContact !== -1){
-              const contactExistent = JSON.parse(localStorage.getItem(`${userLogged}.contact:${contactForAccept.fromUser}`));
-              contactExistent.publicKeyExtern = contactForAccept.privateKey;
-              localStorage.setItem(`${userLogged}.contact:${contactForAccept.fromUser}`, JSON.stringify(contactExistent));
+            if( indexContact !== -1 ){
 
-              document.querySelector(`#${contactForAccept.fromUser}`).innerHTML = `<td>@${contactForAccept.fromUser}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${contactForAccept.fromUser}')">Conversa</button></td><td>Aceito</td>`;
+              const contactExistent = await new Promise((resolve, reject) => {
+                const transactionRead = client.db.transaction(client.contactStore);
+                const objectStore = transactionRead.objectStore(client.contactStore);
+
+                let singleKeyRange = IDBKeyRange.only(contactForAccept.fromUser);
+                objectStore.openCursor(singleKeyRange).onsuccess = (event) => {
+                  const cursor = event.target.result;
+                  if(cursor){
+                    resolve(JSON.parse(cursor.value.data));
+                  }
+                }
+              });
+
+              // const contactExistent = JSON.parse(localStorage.getItem(`${userLogged}.contact:${contactForAccept.fromUser}`));
+
+
+              await new Promise((resolve, reject) => {
+                const transactionAdd = client.db.transaction([client.contactStore], 'readwrite');
+                const objectStore = transactionAdd.objectStore(client.contactStore);
+
+                let singleKeyRange = IDBKeyRange.only(contactForAccept.fromUser);
+                const request = objectStore.delete(singleKeyRange);
+                transactionAdd.oncomplete = event => {
+                  console.log('Finished');
+                  resolve();
+                };
+                transactionAdd.onerror = event => {
+                  reject();
+                }
+              });
+
+              contactExistent.publicKeyExtern = contactForAccept.privateKey;
+              await new Promise((resolve, reject) => {
+                const transactionAdd = client.db.transaction([client.contactStore], 'readwrite');
+                const objectStore = transactionAdd.objectStore(client.contactStore);
+                const contactStore = {
+                  user: contactForAccept.fromUser,
+                  data: JSON.stringify(contactExistent)
+                }
+                const request = objectStore.add(contactStore);
+                transactionAdd.oncomplete = event => {
+                  console.log('Finished');
+                  resolve();
+                };
+                transactionAdd.onerror = event => {
+                  reject();
+                }
+              })
+              // localStorage.setItem(`${userLogged}.contact:${contactForAccept.fromUser}`, JSON.stringify(contactExistent));
+
+              document.querySelector(`#${contactForAccept.fromUser}`).innerHTML = `<td>@${contactForAccept.fromUser}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.startConversation('${contactForAccept.fromUser}')">Conversa</button></td><td>Aceito</td>`;
 
               contacts.splice(indexContact, 1);
 
               contacts.push({
                 user: contactForAccept.fromUser,
                 status: '1'
-              })
+              });
               localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
 
               return ;
@@ -606,7 +706,26 @@ HOCM2VM=
             publicKeyExtern: ''
           };
 
-          localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
+          // localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
+
+          await new Promise((resolve, reject) => {
+            const transactionAdd = client.db.transaction([client.contactStore], 'readwrite');
+            const objectStore = transactionAdd.objectStore(client.contactStore);
+            const contactStore = {
+              user,
+              data: JSON.stringify(contact)
+            }
+            const request = objectStore.add(contactStore);
+            transactionAdd.oncomplete = event => {
+              console.log('Finished');
+              resolve();
+            };
+            transactionAdd.onerror = event => {
+              reject();
+            }
+          })
+
+
           localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
 
           let contactElement = document.createElement('tr');
@@ -685,12 +804,29 @@ HOCM2VM=
             publicKeyExtern
           };
 
-          localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
+          // localStorage.setItem(`${userLogged}.contact:${user}`, JSON.stringify(contact));
+          await new Promise((resolve, reject) => {
+            const transactionAdd = client.db.transaction([client.contactStore], 'readwrite');
+            const objectStore = transactionAdd.objectStore(client.contactStore);
+            const contactStore = {
+              user,
+              data: JSON.stringify(contact)
+            }
+            const request = objectStore.add(contactStore);
+            transactionAdd.oncomplete = event => {
+              console.log('Finished');
+              resolve();
+            };
+            transactionAdd.onerror = event => {
+              reject();
+            }
+          })
+
           localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
 
           let contactElement = document.createElement('tr');
           contactElement.id = user;
-          contactElement.innerHTML = `<td>@${user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.conversation('${user}')">Conversa</button></td><td>Aceito</td>`;
+          contactElement.innerHTML = `<td>@${user}</td><td><button type="button" class="btn btn-info btn-sm" onclick="client.startConversation('${user}')">Conversa</button></td><td>Aceito</td>`;
           document.querySelector('#contacts-list').append(contactElement);
 
           document.querySelector('#new-contact').value = '';
@@ -717,40 +853,62 @@ HOCM2VM=
 
           client.connection.emit("contact:add", newContact);
         },
+        async startConversation(user){
+          document.querySelector('#title').innerHTML = `Mensagens -> ${user}`;
+          client.chatOpen = user;
+
+          document.querySelector('#contacts').style.display = "none";
+          document.querySelector('#messages').style.display = "";
+        },
         async sendMessage(){
           const message = document.querySelector("#message").value;
           const userName = localStorage.getItem('logged');
           const passphrase = sessionStorage.getItem(`passphrase`);
-          const privateKeyArmored = localStorage.getItem(`${userName}.user:key`);
+          console.log(`${userName}.user:${client.chatOpen}`);
+          // const contact = JSON.parse(localStorage.getItem(`${userName}.contact:${client.chatOpen}`));
+
+          const contact = await new Promise((resolve, reject) => {
+            const transactionRead = client.db.transaction(client.contactStore);
+            const objectStore = transactionRead.objectStore(client.contactStore);
+
+            let singleKeyRange = IDBKeyRange.only(client.chatOpen);
+            objectStore.openCursor(singleKeyRange).onsuccess = (event) => {
+              const cursor = event.target.result;
+              if(cursor){
+                resolve(JSON.parse(cursor.value.data));
+              }
+            }
+          });
+
           const publicKeyArmored = localStorage.getItem(`${userName}.user:publicKey`);
 
           if(message){
             const {
               keys: [privateKey]
-            } = await openpgp.key.readArmored(privateKeyArmored);
+            } = await openpgp.key.readArmored(contact.privateKey);
 
             await privateKey.decrypt(passphrase);
 
 
             const publicKeys = await Promise.all(
-              [client.serverPublicKey, publicKeyArmored].map(async key => {
+              [contact.publicKey, contact.publicKeyExtern, publicKeyArmored].map(async key => {
                 return (await openpgp.key.readArmored(key)).keys[0];
               })
             );
 
             const { data: newMessage } = await openpgp.encrypt({
-              message: openpgp.message.fromText(JSON.stringify({message, userName})),
+              message: openpgp.message.fromText(JSON.stringify({message})),
               publicKeys,
               privateKeys: [privateKey]
             });
 
-            socket.emit("message:new", newMessage);
+            client.conversation.emit("message:new", {message: newMessage, to: client.chatOpen});
             document.querySelector("#message").value = "";
           }
         }
       }
+      client.createDB();
 
-      client.load();
 
     </script>
 

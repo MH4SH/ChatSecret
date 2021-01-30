@@ -28,7 +28,7 @@ const conversation = (server: Server): void => {
       const socketQuery = socket.handshake.query as SocketQuery;
 
       console.log(`Client entrou conversation [id=${socket.id}]`);
-      socket.join(`sala-1`);
+      socket.join(socketQuery.userName);
 
       Redis.hmset(`Users:${socketQuery.userName}:data`, {
         conversation: socket.id,
@@ -45,40 +45,60 @@ const conversation = (server: Server): void => {
 
       socket.on(
         'message:new',
-        async (message, timestamp = 1000): Promise<void | boolean> => {
+        async ({ to, message }, timestamp = 1000): Promise<void | boolean> => {
           const privateKeyServer = await fs.readFileSync(
             'keys/server.cpr',
             'utf-8'
           );
-
-          const publicKey = await new Promise(resolve => {
-            Redis.hmget(
-              `Users:${socketQuery.userName}:data`,
-              'publicKey',
-              (err, data) => resolve(data[0])
-            );
-          });
-
           const {
             keys: [privateKey]
           } = await openpgp.key.readArmored(privateKeyServer);
           await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
 
-          const decrypted = await openpgp.decrypt({
-            message: await openpgp.message.readArmored(message),
-            publicKeys: (await openpgp.key.readArmored(publicKey)).keys,
+          const keyUser = (
+            await new Promise<string[]>(resolve => {
+              Redis.hmget(
+                `Users:${socketQuery.userName}:data`,
+                'publicKey',
+                (err, data) => resolve(data)
+              );
+            })
+          )[0];
+
+          const { data: returnMessage } = await openpgp.encrypt({
+            message: openpgp.message.fromText(
+              JSON.stringify({
+                isMy: true,
+                to,
+                message
+              })
+            ),
+            publicKeys: (await openpgp.key.readArmored(keyUser)).keys,
             privateKeys: [privateKey]
           });
 
-          if (!decrypted.signatures[0].valid) {
-            return false;
-          }
+          socket.emit('message:receive', returnMessage);
 
-          messages.push(message);
+          const keyUserTo = (
+            await new Promise<string[]>(resolve => {
+              Redis.hmget(`Users:${to}:data`, 'publicKey', (err, data) =>
+                resolve(data)
+              );
+            })
+          )[0];
 
-          socket.emit('message:receive', message);
-
-          socket.to('sala-1').emit('message:receive', message);
+          const { data: messageToSend } = await openpgp.encrypt({
+            message: openpgp.message.fromText(
+              JSON.stringify({
+                isMy: false,
+                from: socketQuery.userName,
+                message
+              })
+            ),
+            publicKeys: (await openpgp.key.readArmored(keyUserTo)).keys,
+            privateKeys: [privateKey]
+          });
+          socket.to(to).emit('message:receive', messageToSend);
 
           return true;
         }
