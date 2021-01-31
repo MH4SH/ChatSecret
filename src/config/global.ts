@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import * as openpgp from 'openpgp';
 
+const globalAny: any = global;
+
 const globalVars = async (): Promise<void> => {
   const publicKeyClientArmored = await fs.readFileSync(
     path.resolve(__dirname, '..', '..', 'keys', 'client.cpu'),
@@ -21,8 +23,8 @@ const globalVars = async (): Promise<void> => {
   } = await openpgp.key.readArmored(privateKeyServerArmored);
   await privateKeyServer.decrypt(process.env.PGP_SERVER_TOKEN || '');
 
-  global.__PUBLIC_KEY_CLIENT__ = publicKeyClient;
-  global.__PRIVATE_KEY_SERVER__ = privateKeyServer;
+  globalAny.__PUBLIC_KEY_CLIENT__ = publicKeyClient;
+  globalAny.__PRIVATE_KEY_SERVER__ = privateKeyServer;
 };
 
 export default globalVars;

@@ -9,6 +9,7 @@ import { verifySocker, SocketAuth } from '../middlewares/auth';
 export interface SocketQuery {
   userName: string;
 }
+const globalAny: any = global;
 
 const connection = (server: Server): void => {
   const io = require('socket.io')({
@@ -50,18 +51,20 @@ const connection = (server: Server): void => {
       socket.on(
         'contact:add',
         async (contactEncrypted, timestamp = 1000): Promise<void | boolean> => {
-          const publicKeyUser = await new Promise(resolve => {
-            Redis.hmget(
-              `Users:${socketQuery.userName}:data`,
-              'publicKey',
-              (err, data) => resolve(data[0])
-            );
-          });
+          const publicKeyUser = (
+            await new Promise<string[]>(resolve => {
+              Redis.hmget(
+                `Users:${socketQuery.userName}:data`,
+                'publicKey',
+                (err, data) => resolve(data)
+              );
+            })
+          )[0];
 
           const decrypted = await openpgp.decrypt({
             message: await openpgp.message.readArmored(contactEncrypted),
             publicKeys: (await openpgp.key.readArmored(publicKeyUser)).keys,
-            privateKeys: [global.__PRIVATE_KEY_SERVER__]
+            privateKeys: [globalAny.__PRIVATE_KEY_SERVER__]
           });
 
           if (!decrypted.signatures[0].valid) {
@@ -91,7 +94,7 @@ const connection = (server: Server): void => {
                 })
               ),
               publicKeys: (await openpgp.key.readArmored(publicKeyUser)).keys,
-              privateKeys: [global.__PRIVATE_KEY_SERVER__]
+              privateKeys: [globalAny.__PRIVATE_KEY_SERVER__]
             });
 
             socket.emit('contact:error', errorContact);
@@ -101,7 +104,7 @@ const connection = (server: Server): void => {
             message: openpgp.message.fromText(JSON.stringify(contact)),
             publicKeys: (await openpgp.key.readArmored(publicKeyDestination))
               .keys,
-            privateKeys: [global.__PRIVATE_KEY_SERVER__]
+            privateKeys: [globalAny.__PRIVATE_KEY_SERVER__]
           });
 
           Redis.hmset(
@@ -121,31 +124,35 @@ const connection = (server: Server): void => {
       socket.on(
         'contact:add:received',
         async (contactReceived, timestamp = 1000): Promise<void | boolean> => {
-          const publicKeyUser = await new Promise(resolve => {
-            Redis.hmget(
-              `Users:${socketQuery.userName}:data`,
-              'publicKey',
-              (err, data) => resolve(data[0])
+          try {
+            const publicKeyUser = await new Promise(resolve => {
+              Redis.hmget(
+                `Users:${socketQuery.userName}:data`,
+                'publicKey',
+                (err, data) => resolve(data[0])
+              );
+            });
+
+            const decrypted = await openpgp.decrypt({
+              message: await openpgp.message.readArmored(contactReceived),
+              publicKeys: (await openpgp.key.readArmored(publicKeyUser)).keys,
+              privateKeys: [globalAny.__PRIVATE_KEY_SERVER__]
+            });
+
+            if (!decrypted.signatures[0].valid) {
+              return false;
+            }
+
+            const contact: { to: string; from: string } = JSON.parse(
+              decrypted.data
             );
-          });
 
-          const decrypted = await openpgp.decrypt({
-            message: await openpgp.message.readArmored(contactReceived),
-            publicKeys: (await openpgp.key.readArmored(publicKeyUser)).keys,
-            privateKeys: [global.__PRIVATE_KEY_SERVER__]
-          });
+            Redis.del(`Contact:add:${contact.to}:per:${contact.from}`);
 
-          if (!decrypted.signatures[0].valid) {
-            return false;
+            return true;
+          } catch (err) {
+            console.log(err);
           }
-
-          const contact: { to: string; from: string } = JSON.parse(
-            decrypted.data
-          );
-
-          Redis.del(`Contact:add:${contact.to}:per:${contact.from}`);
-
-          return true;
         }
       );
     });

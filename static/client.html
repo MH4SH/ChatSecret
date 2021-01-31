@@ -544,7 +544,7 @@ HOCM2VM=
             }
           });
 
-          client.conversation.on("message:receive", async function(messagePgp) {
+          client.conversation.on("message:receive", async function({id, message: messagePgp}) {
             const userLogged = localStorage.getItem('logged');
 
             const {
@@ -559,6 +559,46 @@ HOCM2VM=
             });
 
             const data = JSON.parse(fistDecrypted.data);
+
+            const {
+                keys: [privateKey]
+              } = await openpgp.key.readArmored(privateKeyArmored);
+            await privateKey.decrypt(passphrase);
+
+            const publicKeys = await Promise.all(
+              [client.serverPublicKey].map(async key => {
+                return (await openpgp.key.readArmored(key)).keys[0];
+              })
+            );
+
+            const { data: messageReceived } = await openpgp.encrypt({
+              message: openpgp.message.fromText(JSON.stringify({id, from: data.contact, to: userLogged })),
+              publicKeys,
+              privateKeys: [privateKey]
+            });
+
+            client.conversation.emit("message:new:received", messageReceived);
+
+            await new Promise((resolve, reject) => {
+              const transactionAdd = client.db.transaction([client.chatsStore], 'readwrite');
+              const objectStore = transactionAdd.objectStore(client.chatsStore);
+              const contactStore = {
+                itsMine: data.itsMine,
+                contact: data.contact,
+                time: new Date().getTime(),
+                message: data.message,
+                validServer: false,
+                validUser: false
+              }
+              const request = objectStore.add(contactStore);
+              transactionAdd.oncomplete = event => {
+                console.log('Finished');
+                resolve();
+              };
+              transactionAdd.onerror = event => {
+                reject();
+              }
+            })
 
             if(client.chatOpen === data.contact){
               const contact = await new Promise((resolve, reject) => {
@@ -601,26 +641,6 @@ HOCM2VM=
               document.querySelector("#root").insertAdjacentElement('afterbegin', messageElement);
             }
 
-            await new Promise((resolve, reject) => {
-              const transactionAdd = client.db.transaction([client.chatsStore], 'readwrite');
-              const objectStore = transactionAdd.objectStore(client.chatsStore);
-              const contactStore = {
-                itsMine: data.itsMine,
-                contact: data.contact,
-                time: new Date().getTime(),
-                message: data.message,
-                validServer: false,
-                validUser: false
-              }
-              const request = objectStore.add(contactStore);
-              transactionAdd.oncomplete = event => {
-                console.log('Finished');
-                resolve();
-              };
-              transactionAdd.onerror = event => {
-                reject();
-              }
-            })
 
           });
 
@@ -643,6 +663,22 @@ HOCM2VM=
 
             const contacts = JSON.parse(localStorage.getItem(`${userLogged}.contacts`) || '[]');
             const indexContact = contacts.findIndex(contactItem => contactItem.user === contactForAccept.fromUser);
+
+            const publicKeys = await Promise.all(
+              [client.serverPublicKey].map(async key => {
+                return (await openpgp.key.readArmored(key)).keys[0];
+              })
+            );
+
+            const { data: contactReceived } = await openpgp.encrypt({
+              message: openpgp.message.fromText(JSON.stringify({ from: contactForAccept.fromUser, to: userLogged })),
+              publicKeys,
+              privateKeys: [privateKey]
+            });
+
+            client.connection.emit("contact:add:received", contactReceived);
+
+
             if( indexContact !== -1 ){
 
               const contactExistent = await new Promise((resolve, reject) => {
@@ -875,25 +911,6 @@ HOCM2VM=
 
 
           localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
-
-          const {
-              keys: [privateKey]
-            } = await openpgp.key.readArmored(privateKeyArmored);
-          await privateKey.decrypt(passphrase);
-
-          const publicKeys = await Promise.all(
-            [client.serverPublicKey].map(async key => {
-              return (await openpgp.key.readArmored(key)).keys[0];
-            })
-          );
-
-          const { data: contactReceived } = await openpgp.encrypt({
-            message: openpgp.message.fromText(JSON.stringify({ from: contact.user, to: client.chatOpen })),
-            publicKeys,
-            privateKeys: [privateKey]
-          });
-
-          client.conversation.emit("contact:add:received", contactReceived);
 
           let contactElement = document.createElement('tr');
           contactElement.id = user;

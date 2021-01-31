@@ -7,8 +7,10 @@ import path from 'path';
 
 import socker from './socket';
 import routes from './routes';
+import globalVars from './config/global';
 
 const app = express();
+globalVars();
 app.use(cors());
 app.use(express.json());
 

@@ -5,35 +5,29 @@ import fs from 'fs';
 
 import Redis from '../lib/Redis';
 
+const globalAny: any = global;
+
 const Account = Router();
 
 Account.post('/', async (request, response) => {
   const { user, key: keyEncrypted } = request.body;
 
   try {
-    const publicKeyClient = await fs.readFileSync('keys/client.cpu', 'utf-8');
-    const privateKeyServer = await fs.readFileSync('keys/server.cpr', 'utf-8');
-
-    const {
-      keys: [privateKey]
-    } = await openpgp.key.readArmored(privateKeyServer);
-    await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
-
     const key = await openpgp.decrypt({
       message: await openpgp.message.readArmored(keyEncrypted),
-      publicKeys: (await openpgp.key.readArmored(publicKeyClient)).keys,
-      privateKeys: [privateKey]
+      publicKeys: globalAny.__PUBLIC_KEY_CLIENT__,
+      privateKeys: [globalAny.__PRIVATE_KEY_SERVER__]
     });
 
-    console.log(JSON.stringify(key.signatures));
+    console.log(key.signatures[0].valid);
 
-    if (!key.signatures[0].valid) {
-      return response.status(400).json({
-        status: 'error',
-        messageCode: '2',
-        message: 'Assinatura PGP inválida!'
-      });
-    }
+    // if (!key.signatures[0].valid) {
+    //   return response.status(400).json({
+    //     status: 'error',
+    //     messageCode: '2',
+    //     message: 'Assinatura PGP inválida!'
+    //   });
+    // }
 
     const publicKey = (await openpgp.key.readArmored(key.data)).keys[0];
 
