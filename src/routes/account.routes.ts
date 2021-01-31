@@ -17,6 +17,7 @@ Account.post('/', async (request, response) => {
     const {
       keys: [privateKey]
     } = await openpgp.key.readArmored(privateKeyServer);
+    console.log(process.env.PGP_SERVER_TOKEN || '');
     await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
 
     const key = await openpgp.decrypt({
