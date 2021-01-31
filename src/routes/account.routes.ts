@@ -9,6 +9,7 @@ const Account = Router();
 
 Account.post('/', async (request, response) => {
   const { user, key: keyEncrypted } = request.body;
+  console.log(process.env);
 
   try {
     const publicKeyClient = await fs.readFileSync('keys/client.cpu', 'utf-8');
