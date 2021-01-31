@@ -1,7 +1,6 @@
 import { Server } from 'http';
 import * as socketIo from 'socket.io';
 import * as openpgp from 'openpgp';
-import fs from 'fs';
 import Redis from '../lib/Redis';
 
 export interface SocketQuery {
@@ -43,6 +42,7 @@ const connection = (server: Server): void => {
     socket.on(
       'contact:add',
       async (contactEncrypted, timestamp = 1000): Promise<void | boolean> => {
+        console.time('Add Contact');
         const publicKeyUser = (
           await new Promise<string[]>(resolve => {
             Redis.hmget(
@@ -102,6 +102,7 @@ const connection = (server: Server): void => {
 
         socket.to(contact.user).emit('contact:new', newContact);
 
+        console.timeEnd('Add Contact');
         return true;
       }
     );
@@ -109,6 +110,7 @@ const connection = (server: Server): void => {
     socket.on(
       'contact:add:received',
       async (contactReceived, timestamp = 1000): Promise<void | boolean> => {
+        console.time('Received Contact');
         try {
           const publicKeyUser = await new Promise(resolve => {
             Redis.hmget(
@@ -138,6 +140,8 @@ const connection = (server: Server): void => {
         } catch (err) {
           console.log(err);
           return false;
+        } finally {
+          console.timeEnd('Received Contact');
         }
       }
     );

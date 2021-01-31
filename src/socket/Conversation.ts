@@ -85,6 +85,8 @@ const conversation = (server: Server): void => {
     socket.on(
       'message:new:received',
       async (messageReceived, timestamp = 1000): Promise<void | boolean> => {
+        console.time('Message Received');
+
         const publicKeyUser = await new Promise(resolve => {
           Redis.hmget(
             `Users:${socketQuery.userName}:data`,
@@ -111,6 +113,7 @@ const conversation = (server: Server): void => {
           `Message:to:${message.to}:from:${message.from}:${message.id}`
         );
 
+        console.timeEnd('Message Received');
         return true;
       }
     );
