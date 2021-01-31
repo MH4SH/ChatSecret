@@ -530,14 +530,14 @@ HOCM2VM=
 
 
 
-          client.conversation = io("http://localhost:3000", {
+          client.conversation = io("/", {
             path: '/conversation',
             query: {
               userName
             }
           });
 
-          client.connection = io("http://localhost:3000", {
+          client.connection = io("/", {
             path: '/connection',
             query: {
               userName
