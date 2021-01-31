@@ -1,0 +1,7 @@
+{
+    "name": "secret-chat",
+    "version": "0.5.1",
+    "main": "index.js",
+    "private": true,
+    "author": "Marcon Willian <marconwillian@protonmail.com>"
+  }

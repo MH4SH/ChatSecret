@@ -1,5 +1,5 @@
 {
-  "name": "client",
+  "name": "@secret-chat/client",
   "version": "0.5.0",
   "private": true,
   "dependencies": {

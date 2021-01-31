@@ -1,7 +1,7 @@
 {
-    "name": "chat_secret_server",
+    "name": "@secret-chat/server",
     "version": "0.4.3",
-    "main": "index.js",
+    "main": "dist/index.js",
     "author": "Marcon Willian Oliveira Neves <oi@marconwillian.dev>",
     "license": "MIT",
     "scripts": {
