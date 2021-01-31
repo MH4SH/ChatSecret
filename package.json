@@ -1,6 +1,6 @@
 {
     "name": "chat_secret_server",
-    "version": "0.4.1",
+    "version": "0.4.3",
     "main": "index.js",
     "author": "Marcon Willian Oliveira Neves <oi@marconwillian.dev>",
     "license": "MIT",
@@ -17,6 +17,7 @@
         "@types/openpgp": "^4.4.15",
         "@types/redis": "^2.8.28",
         "@types/socket.io": "^2.1.12",
+        "@types/uuid": "^8.3.0",
         "@typescript-eslint/eslint-plugin": "^4.14.1",
         "@typescript-eslint/parser": "^4.14.1",
         "eslint": "7.18.0",
@@ -37,6 +38,7 @@
         "jsonwebtoken": "^8.5.1",
         "openpgp": "^4.10.10",
         "redis": "^3.0.2",
-        "socket.io": "^3.1.0"
+        "socket.io": "^3.1.0",
+        "uuid": "^8.3.2"
     }
 }
