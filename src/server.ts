@@ -17,6 +17,7 @@ const http = new Server(app);
 const portOfApplication = 3000;
 
 socker(http);
+
 routes(app);
 
 app.get('/', (req: any, res: any) => {
