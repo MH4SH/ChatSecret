@@ -9,7 +9,6 @@ const Account = Router();
 
 Account.post('/', async (request, response) => {
   const { user, key: keyEncrypted } = request.body;
-  console.log(process.env);
 
   try {
     const publicKeyClient = await fs.readFileSync('keys/client.cpu', 'utf-8');
@@ -18,7 +17,6 @@ Account.post('/', async (request, response) => {
     const {
       keys: [privateKey]
     } = await openpgp.key.readArmored(privateKeyServer);
-    console.log(process.env.PGP_SERVER_TOKEN || '');
     await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
 
     const key = await openpgp.decrypt({
@@ -26,6 +24,8 @@ Account.post('/', async (request, response) => {
       publicKeys: (await openpgp.key.readArmored(publicKeyClient)).keys,
       privateKeys: [privateKey]
     });
+
+    console.log(JSON.stringify(key.signatures));
 
     if (!key.signatures[0].valid) {
       return response.status(400).json({
@@ -46,6 +46,7 @@ Account.post('/', async (request, response) => {
       return response.status(400).json({
         status: 'error',
         messageCode: '2',
+        messagePart: '2',
         message: 'Assinatura PGP inválida!'
       });
     }
