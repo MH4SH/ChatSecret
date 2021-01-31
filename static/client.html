@@ -873,7 +873,27 @@ HOCM2VM=
             }
           })
 
+
           localStorage.setItem(`${userLogged}.contacts`, JSON.stringify(contacts));
+
+          const {
+              keys: [privateKey]
+            } = await openpgp.key.readArmored(privateKeyArmored);
+          await privateKey.decrypt(passphrase);
+
+          const publicKeys = await Promise.all(
+            [client.serverPublicKey].map(async key => {
+              return (await openpgp.key.readArmored(key)).keys[0];
+            })
+          );
+
+          const { data: contactReceived } = await openpgp.encrypt({
+            message: openpgp.message.fromText(JSON.stringify({ from: contact.user, to: client.chatOpen })),
+            publicKeys,
+            privateKeys: [privateKey]
+          });
+
+          client.conversation.emit("contact:add:received", contactReceived);
 
           let contactElement = document.createElement('tr');
           contactElement.id = user;

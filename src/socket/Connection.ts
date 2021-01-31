@@ -10,8 +10,6 @@ export interface SocketQuery {
   userName: string;
 }
 
-const messages: string[] = [];
-
 const connection = (server: Server): void => {
   const io = require('socket.io')({
     path: '/connection',
@@ -23,36 +21,36 @@ const connection = (server: Server): void => {
   console.log('Started monit listening!');
 
   io.attach(server)
-    .use(verifySocker)
+    // .use(verifySocker)
     .on('connection', (socket: SocketAuth) => {
       const socketQuery = socket.handshake.query as SocketQuery;
 
       console.log(`Client entrou connection [id=${socket.id}]`);
+      socket.join(socketQuery.userName);
 
       Redis.hmset(`Users:${socketQuery.userName}:data`, {
-        connection: socket.id,
         lastAccess: new Date().getTime()
       });
 
+      Redis.keys(
+        `Contact:add:${socketQuery.userName}:per:*`,
+        (err, keys: string[]) => {
+          keys.forEach(key => {
+            Redis.hmget(key, 'contact', (errGet, data) => {
+              socket.emit('contact:new', data[0]);
+            });
+          });
+        }
+      );
+
       /**
-       * Add Contact
-       *  * Ver se o usuário existe
-       *  * Esperar ele aceitar
-       *  * Gerar key para conversa e enviar publicKey
-       *  * Ao Receber key do outro user, gerar a sua e enviar.
-       *
        * Verify is Online
        */
 
       socket.on(
         'contact:add',
-        async (message, timestamp = 1000): Promise<void | boolean> => {
-          const privateKeyServer = await fs.readFileSync(
-            'keys/server.cpr',
-            'utf-8'
-          );
-
-          const publicKey = await new Promise(resolve => {
+        async (contactEncrypted, timestamp = 1000): Promise<void | boolean> => {
+          const publicKeyUser = await new Promise(resolve => {
             Redis.hmget(
               `Users:${socketQuery.userName}:data`,
               'publicKey',
@@ -60,15 +58,10 @@ const connection = (server: Server): void => {
             );
           });
 
-          const {
-            keys: [privateKey]
-          } = await openpgp.key.readArmored(privateKeyServer);
-          await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
-
           const decrypted = await openpgp.decrypt({
-            message: await openpgp.message.readArmored(message),
-            publicKeys: (await openpgp.key.readArmored(publicKey)).keys,
-            privateKeys: [privateKey]
+            message: await openpgp.message.readArmored(contactEncrypted),
+            publicKeys: (await openpgp.key.readArmored(publicKeyUser)).keys,
+            privateKeys: [global.__PRIVATE_KEY_SERVER__]
           });
 
           if (!decrypted.signatures[0].valid) {
@@ -77,16 +70,15 @@ const connection = (server: Server): void => {
 
           const contact = JSON.parse(decrypted.data);
 
-          const [publicKeyDestination, socketIdConnection] = await new Promise<
-            string[]
-          >(resolve => {
-            Redis.hmget(
-              `Users:${contact.user}:data`,
-              'publicKey',
-              'connection',
-              (err, data) => resolve(data)
-            );
-          });
+          const [publicKeyDestination] = await new Promise<string[]>(
+            resolve => {
+              Redis.hmget(
+                `Users:${contact.user}:data`,
+                'publicKey',
+                (err, data) => resolve(data)
+              );
+            }
+          );
 
           if (publicKeyDestination === null) {
             const { data: errorContact } = await openpgp.encrypt({
@@ -98,8 +90,8 @@ const connection = (server: Server): void => {
                   contact: contact.user
                 })
               ),
-              publicKeys: (await openpgp.key.readArmored(publicKey)).keys,
-              privateKeys: [privateKey]
+              publicKeys: (await openpgp.key.readArmored(publicKeyUser)).keys,
+              privateKeys: [global.__PRIVATE_KEY_SERVER__]
             });
 
             socket.emit('contact:error', errorContact);
@@ -109,7 +101,7 @@ const connection = (server: Server): void => {
             message: openpgp.message.fromText(JSON.stringify(contact)),
             publicKeys: (await openpgp.key.readArmored(publicKeyDestination))
               .keys,
-            privateKeys: [privateKey]
+            privateKeys: [global.__PRIVATE_KEY_SERVER__]
           });
 
           Redis.hmset(
@@ -120,7 +112,7 @@ const connection = (server: Server): void => {
             }
           );
 
-          socket.to(socketIdConnection).emit('contact:new', newContact);
+          socket.to(contact.user).emit('contact:new', newContact);
 
           return true;
         }
@@ -128,13 +120,8 @@ const connection = (server: Server): void => {
 
       socket.on(
         'contact:add:received',
-        async (message, timestamp = 1000): Promise<void | boolean> => {
-          const privateKeyServer = await fs.readFileSync(
-            'keys/server.cpr',
-            'utf-8'
-          );
-
-          const publicKey = await new Promise(resolve => {
+        async (contactReceived, timestamp = 1000): Promise<void | boolean> => {
+          const publicKeyUser = await new Promise(resolve => {
             Redis.hmget(
               `Users:${socketQuery.userName}:data`,
               'publicKey',
@@ -142,15 +129,10 @@ const connection = (server: Server): void => {
             );
           });
 
-          const {
-            keys: [privateKey]
-          } = await openpgp.key.readArmored(privateKeyServer);
-          await privateKey.decrypt(process.env.PGP_SERVER_TOKEN || '');
-
           const decrypted = await openpgp.decrypt({
-            message: await openpgp.message.readArmored(message),
-            publicKeys: (await openpgp.key.readArmored(publicKey)).keys,
-            privateKeys: [privateKey]
+            message: await openpgp.message.readArmored(contactReceived),
+            publicKeys: (await openpgp.key.readArmored(publicKeyUser)).keys,
+            privateKeys: [global.__PRIVATE_KEY_SERVER__]
           });
 
           if (!decrypted.signatures[0].valid) {
